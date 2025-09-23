@@ -2,7 +2,7 @@
 
 🎉 Welcome to my Artifact demo! 🎉
 
-I've had a lot of fun working on this coding project! This web-app uses the React Flow library to enable users to diagram concurrently with nodes and edges.
+I've had a lot of fun working on this coding project! This web-app uses the React Flow library to enable users to diagram concurrently with nodes and edges. Deployed on Vercel.
 
 Concurrency Features:
 🤝 Rooms where multiple clients can access and simultaneously edit
