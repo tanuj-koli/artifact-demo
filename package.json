@@ -1,0 +1,34 @@
+{
+  "name": "artifact-demo",
+  "version": "1.0.0",
+  "description": "Diagramming web app that supports concurrent usage",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "lucide": "^0.544.0",
+    "nanoid": "4.0.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "reactflow": "11.7.0",
+    "vite": "^7.1.6",
+    "y-websocket": "^1.4.5",
+    "yjs": "^13.6.27"
+  },
+  "devDependencies": {
+    "@svgr/webpack": "^8.1.0",
+    "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.0.3",
+    "stylelint": "^16.24.0",
+    "stylelint-config-standard": "^39.0.0",
+    "vite": "5.0.0"
+  }
+}
