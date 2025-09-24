@@ -62,13 +62,13 @@ function FlowCanvas({ room, connectedRoom, clientId, initRoom }) {
             // Observe remote changes
             yNodes.observe(() => {
                 applyingRemote.current = true;
-                setNodes(Array.from(yNodes.values()));
+                setNodes(yNodes.toArray());
                 setTimeout(() => (applyingRemote.current = false), 10);
             });
 
             yEdges.observe(() => {
                 applyingRemote.current = true;
-                setEdges(Array.from(yEdges.values()));
+                setEdges(yEdges.toArray());
                 setTimeout(() => (applyingRemote.current = false), 10);
             });
         
@@ -96,8 +96,8 @@ function FlowCanvas({ room, connectedRoom, clientId, initRoom }) {
             yEdgesRef.current = yEdges;
 
             // Initialize local state
-            setNodes(Array.from(yNodes.values()));
-            setEdges(Array.from(yEdges.values()));
+            setNodes(yNodes.toArray());
+            setEdges(yEdges.toArray());
 
             return () => {
                 clearInterval(poll);
