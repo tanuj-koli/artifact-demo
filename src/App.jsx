@@ -56,7 +56,7 @@ function FlowCanvas({ room, connectedRoom, clientId, initRoom }) {
                 throw new Error(`Failed to fetch room: ${res.status}`);
             }
             const data = await res.json();
-            
+
             if (data.update) {
                 const update = new Uint8Array(data.update);
                 Y.applyUpdate(ydoc, update);
@@ -83,13 +83,26 @@ function FlowCanvas({ room, connectedRoom, clientId, initRoom }) {
             });
         
             // Save to Redis whenever local changes happen
-            ydoc.on("update", async (update) => {
-                await fetch(`/api/room/${room}`, {
+            ydoc.on("update", async () => {
+                // Save the incremental update
+                const update = Y.encodeStateAsUpdate(ydoc);
+                await fetch(`/api/room/${room}/update`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ update: Array.from(update) }),
                 });
+
+                // Save the full current state for late joiners
+                const yNodes = Array.from(ydoc.getMap("nodes").values());
+                const yEdges = Array.from(ydoc.getMap("edges").values());
+
+                await fetch(`/api/room/${room}/fullstate`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ nodes: yNodes, edges: yEdges }),
+                });
             });
+
         
             // Poll for remote updates every 2s
             const poll = setInterval(async () => {
