@@ -112,14 +112,25 @@ function FlowCanvas({ room, connectedRoom, clientId, initRoom }) {
     const onNodesChangeWithSync = (changes) => {
         setNodes((nds) => {
             const updatedNodes = applyNodeChanges(changes, nds);
+            console.log('moving node')
             if (!applyingRemote.current && yNodesRef.current) {
                 ydocRef.current.transact(() => {
-                    updatedNodes.forEach((n) => yNodesRef.current.set(n.id, n));
+                    changes.forEach((change) => {
+                        const node = updatedNodes.find((n) => n.id === change.id);
+                        if (!node) return;
+    
+                        // Only update relevant fields
+                        const yNode = yNodesRef.current.get(node.id) || {};
+                        const newYNode = { ...yNode, position: node.position, style: node.style, data: node.data };
+                        yNodesRef.current.set(node.id, newYNode);
+                    });
                 });
             }
+    
             return updatedNodes;
         });
     };
+    
 
     // Edge changes
     const onEdgesChangeWithSync = (changes) => {
