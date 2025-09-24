@@ -65,67 +65,141 @@ function FlowCanvas({ room, connectedRoom, clientId, initRoom }) {
     }, [nodes, edges]);
 
     // Initialize Yjs room
+    // Initialize Yjs room with Redis backend
     useEffect(() => {
-        // Starts a room
-        function startRoom() {
-            // Clean web sockets and start a new connection
-            if (providerRef.current) {
-                providerRef.current.destroy();
-                ydocRef.current.destroy();
-            }
-            const ydoc = new Y.Doc();
-            const provider = new WebsocketProvider("wss://demos.yjs.dev", room, ydoc);
-            const yNodes = ydoc.getArray("nodes");
-            const yEdges = ydoc.getArray("edges");
-
-            // Initial loaded content
-            // N.b. Yjs has flaky responses and unreliable syncing.
-            // Removing the provider sync will cause duplication when opening multiple clients.
-            //
-            // provider.on("synced", () => {
-            //     ydoc.transact(() => {
-            //         console.log("ynodes: ", yNodes);
-            //         if (yNodes.toArray().length === 0) {
-            //             yNodes.push([
-            //             {
-            //                 id: nanoid(),
-            //                 position: { x: 250, y: 5 },
-            //                 data: { label: "Welcome" },
-            //                 style: { background: "#E6E6FA", color: "#000000" }
-            //             },
-            //             ]);
-            //         }
-            //     });
-            // })
-
-            // Syncs Yjs and ReactFlow
-            const redraw = () => {
-                applyingRemote.current = true;
-                const plainNodes = yNodes.toArray().map((n) => JSON.parse(JSON.stringify(n)));
-                const plainEdges = yEdges.toArray().map((e) => JSON.parse(JSON.stringify(e)));
-                setNodes(plainNodes);
-                setEdges(plainEdges);
-                setTimeout(() => {
-                    applyingRemote.current = false;
-                }, 10);
-            };
-            yNodes.observe(redraw);
-            yEdges.observe(redraw);
-            ydocRef.current = ydoc;
-            providerRef.current = provider;
-            yNodesRef.current = yNodes;
-            yEdgesRef.current = yEdges;
-
-            redraw();
+        async function startRoom() {
+        // Clean up old doc
+        if (ydocRef.current) {
+            ydocRef.current.destroy();
         }
-
-        startRoom();
-
-        return () => {
-            if (providerRef.current) providerRef.current.destroy();
-            if (ydocRef.current) ydocRef.current.destroy();
+    
+        const ydoc = new Y.Doc();
+        const yNodes = ydoc.getArray("nodes");
+        const yEdges = ydoc.getArray("edges");
+    
+        // Load initial state from Redis via API
+        // Load initial state
+        const res = await fetch(`/api/room/${room}`);
+        if (!res.ok) {
+            throw new Error(`Failed to fetch room: ${res.status}`);
+        }
+        console.log('res', res);
+        const data = await res.json();
+        if (data.update) {
+            const update = new Uint8Array(data.update);
+            Y.applyUpdate(ydoc, update);
+        }
+            
+        // Sync Yjs + ReactFlow (your redraw function)
+        const redraw = () => {
+            applyingRemote.current = true;
+            const plainNodes = yNodes.toArray().map((n) => JSON.parse(JSON.stringify(n)));
+            const plainEdges = yEdges.toArray().map((e) => JSON.parse(JSON.stringify(e)));
+            setNodes(plainNodes);
+            setEdges(plainEdges);
+            setTimeout(() => {
+            applyingRemote.current = false;
+            }, 10);
         };
+        yNodes.observe(redraw);
+        yEdges.observe(redraw);
+    
+        // Save to Redis whenever local changes happen
+        ydoc.on("update", async (update) => {
+            await fetch(`/api/room/${room}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ update: Array.from(update) }),
+            });
+        });
+    
+        // Poll for remote updates every 2s
+        const poll = setInterval(async () => {
+            const res = await fetch(`/api/room/${room}`);
+            const data = await res.json();
+            if (data.update) {
+            const update = new Uint8Array(Object.values(data.update));
+            Y.applyUpdate(ydoc, update);
+            }
+        }, 2000);
+    
+        // Save refs
+        ydocRef.current = ydoc;
+        yNodesRef.current = yNodes;
+        yEdgesRef.current = yEdges;
+    
+        redraw();
+    
+        return () => {
+            clearInterval(poll);
+            ydoc.destroy();
+        };
+        }
+    
+        startRoom();
     }, [room, setNodes, setEdges]);
+
+    // useEffect(() => {
+    //     // Starts a room
+    //     function startRoom() {
+    //         // Clean web sockets and start a new connection
+    //         if (providerRef.current) {
+    //             providerRef.current.destroy();
+    //             ydocRef.current.destroy();
+    //         }
+    //         const ydoc = new Y.Doc();
+    //         const provider = new WebsocketProvider("wss://demos.yjs.dev", room, ydoc);
+    //         const yNodes = ydoc.getArray("nodes");
+    //         const yEdges = ydoc.getArray("edges");
+
+    //         // Initial loaded content
+    //         // N.b. Yjs has flaky responses and unreliable syncing.
+    //         // Removing the provider sync will cause duplication when opening multiple clients.
+    //         //
+    //         // provider.on("synced", () => {
+    //         //     ydoc.transact(() => {
+    //         //         console.log("ynodes: ", yNodes);
+    //         //         if (yNodes.toArray().length === 0) {
+    //         //             yNodes.push([
+    //         //             {
+    //         //                 id: nanoid(),
+    //         //                 position: { x: 250, y: 5 },
+    //         //                 data: { label: "Welcome" },
+    //         //                 style: { background: "#E6E6FA", color: "#000000" }
+    //         //             },
+    //         //             ]);
+    //         //         }
+    //         //     });
+    //         // })
+
+    //         // Syncs Yjs and ReactFlow
+    //         const redraw = () => {
+    //             applyingRemote.current = true;
+    //             const plainNodes = yNodes.toArray().map((n) => JSON.parse(JSON.stringify(n)));
+    //             const plainEdges = yEdges.toArray().map((e) => JSON.parse(JSON.stringify(e)));
+    //             setNodes(plainNodes);
+    //             setEdges(plainEdges);
+    //             setTimeout(() => {
+    //                 applyingRemote.current = false;
+    //             }, 10);
+    //         };
+    //         yNodes.observe(redraw);
+    //         yEdges.observe(redraw);
+    //         ydocRef.current = ydoc;
+    //         providerRef.current = provider;
+    //         yNodesRef.current = yNodes;
+    //         yEdgesRef.current = yEdges;
+
+    //         redraw();
+    //     }
+
+    //     startRoom();
+
+    //     return () => {
+    //         if (providerRef.current) providerRef.current.destroy();
+    //         if (ydocRef.current) ydocRef.current.destroy();
+    //     };
+    // }, [room, setNodes, setEdges]);
 
     // Connect nodes
     const edgeConnect = useCallback((params) => setEdges((eds) => addEdge({ ...params, id: nanoid() }, eds)),
