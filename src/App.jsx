@@ -106,7 +106,10 @@ function FlowCanvas({ room, connectedRoom, clientId, initRoom }) {
             yEdgesRef.current = yEdges;
 
             // Initialize local state
+            console.log("Fetched nodes:", yNodes.toArray());
             setNodes(Array.from(yNodes.values()));
+            console.log("Set nodes:", nodes);
+            
             setEdges(Array.from(yEdges.values()));
 
             return () => {
