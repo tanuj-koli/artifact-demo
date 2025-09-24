@@ -39,147 +39,116 @@ function FlowCanvas({ room, connectedRoom, clientId, initRoom }) {
     // Initialize Yjs room with Redis backend
     useEffect(() => {
         async function startRoom() {
-        // Clean up old doc
-        if (ydocRef.current) {
-            ydocRef.current.destroy();
-        }
-    
-        const ydoc = new Y.Doc();
-        const yNodes = ydoc.getArray("nodes");
-        const yEdges = ydoc.getArray("edges");
-    
-        // Load initial state from Redis via API
-        const res = await fetch(`/api/room/${room}`);
-        if (!res.ok) {
-            throw new Error(`Failed to fetch room: ${res.status}`);
-        }
-        console.log('res', res);
-        const data = await res.json();
-        if (data.update) {
-            const update = new Uint8Array(data.update);
-            Y.applyUpdate(ydoc, update);
-        }
-            
-        // Sync Yjs + ReactFlow (your redraw function)
-        const redraw = () => {
-            applyingRemote.current = true;
-            const plainNodes = yNodes.toArray().map((n) => JSON.parse(JSON.stringify(n)));
-            const plainEdges = yEdges.toArray().map((e) => JSON.parse(JSON.stringify(e)));
-            setNodes(plainNodes);
-            setEdges(plainEdges);
-            setTimeout(() => {
-            applyingRemote.current = false;
-            }, 10);
-        };
-        yNodes.observe(redraw);
-        yEdges.observe(redraw);
-    
-        // Save to Redis whenever local changes happen
-        ydoc.on("update", async (update) => {
-            await fetch(`/api/room/${room}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ update: Array.from(update) }),
-            });
-        });
-    
-        // Poll for remote updates every 2s
-        const poll = setInterval(async () => {
+            // Clean up old doc
+            if (ydocRef.current) {
+                ydocRef.current.destroy();
+            }
+        
+            const ydoc = new Y.Doc();
+            const yNodes = ydoc.getArray("nodes");
+            const yEdges = ydoc.getArray("edges");
+        
+            // Load initial state from Redis via API
             const res = await fetch(`/api/room/${room}`);
+            if (!res.ok) {
+                throw new Error(`Failed to fetch room: ${res.status}`);
+            }
             const data = await res.json();
             if (data.update) {
-            const update = new Uint8Array(Object.values(data.update));
-            Y.applyUpdate(ydoc, update);
+                const update = new Uint8Array(data.update);
+                Y.applyUpdate(ydoc, update);
             }
-        }, 2000);
-    
-        // Save refs
-        ydocRef.current = ydoc;
-        yNodesRef.current = yNodes;
-        yEdgesRef.current = yEdges;
-    
-        redraw();
-    
-        return () => {
-            clearInterval(poll);
-            ydoc.destroy();
-        };
+
+            // Observe remote changes
+            yNodes.observe(() => {
+                applyingRemote.current = true;
+                setNodes(Array.from(yNodes.values()));
+                setTimeout(() => (applyingRemote.current = false), 10);
+            });
+
+            yEdges.observe(() => {
+                applyingRemote.current = true;
+                setEdges(Array.from(yEdges.values()));
+                setTimeout(() => (applyingRemote.current = false), 10);
+            });
+        
+            // Save to Redis whenever local changes happen
+            ydoc.on("update", async (update) => {
+                await fetch(`/api/room/${room}`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ update: Array.from(update) }),
+                });
+            });
+        
+            // Poll for remote updates every 2s
+            const poll = setInterval(async () => {
+                const res = await fetch(`/api/room/${room}`);
+                const data = await res.json();
+                if (data.update) {
+                    const update = new Uint8Array(Object.values(data.update));
+                    Y.applyUpdate(ydoc, update);
+                }
+            }, 2000);
+        
+            ydocRef.current = ydoc;
+            yNodesRef.current = yNodes;
+            yEdgesRef.current = yEdges;
+
+            // Initialize local state
+            setNodes(Array.from(yNodes.values()));
+            setEdges(Array.from(yEdges.values()));
+
+            return () => {
+                clearInterval(poll);
+                ydoc.destroy();
+            };
         }
     
         startRoom();
     }, [room, setNodes, setEdges]);
 
-    // On Nodes Change
+    // Node changes
     const onNodesChangeWithSync = (changes) => {
         setNodes((nds) => {
             const updatedNodes = applyNodeChanges(changes, nds);
-        
-            if (yNodesRef.current && !applyingRemote.current) {
+            if (!applyingRemote.current && yNodesRef.current) {
                 ydocRef.current.transact(() => {
-                changes.forEach((change) => {
-                    // Only handle moved or updated nodes
-                    if (change.type === 'position' || change.type === 'remove' || change.type === 'add') {
-                    const index = yNodesRef.current.toArray().findIndex((n) => n.id === change.id);
-                    if (index >= 0) {
-                        yNodesRef.current.delete(index, 1);
-                        yNodesRef.current.insert(index, [updatedNodes.find((n) => n.id === change.id)]);
-                    }
-                    }
-                });
+                    updatedNodes.forEach((n) => yNodesRef.current.set(n.id, n));
                 });
             }
-        
             return updatedNodes;
         });
     };
-        
+
+    // Edge changes
     const onEdgesChangeWithSync = (changes) => {
         setEdges((eds) => {
-        const updatedEdges = applyEdgeChanges(changes, eds);
-    
-        if (yEdgesRef.current && !applyingRemote.current) {
-            ydocRef.current.transact(() => {
-            changes.forEach((change) => {
-                if (change.type === 'remove' || change.type === 'add') {
-                const index = yEdgesRef.current.toArray().findIndex((e) => e.id === change.id);
-                if (index >= 0) {
-                    yEdgesRef.current.delete(index, 1);
-                    yEdgesRef.current.insert(index, [updatedEdges.find((e) => e.id === change.id)]);
-                }
-                }
-            });
-            });
-        }
-    
-        return updatedEdges;
+            const updatedEdges = applyEdgeChanges(changes, eds);
+            if (!applyingRemote.current && yEdgesRef.current) {
+                ydocRef.current.transact(() => {
+                    updatedEdges.forEach((e) => yEdgesRef.current.set(e.id, e));
+                });
+            }
+            return updatedEdges;
         });
     };
 
+    // Connect edges
     const edgeConnect = useCallback(
         (params) => {
             const newEdge = { ...params, id: nanoid() };
             setEdges((eds) => eds.concat(newEdge));
-            if (yEdgesRef.current && !applyingRemote.current) {
+            if (!applyingRemote.current && yEdgesRef.current) {
                 ydocRef.current.transact(() => {
-                    yEdgesRef.current.push([newEdge]);
+                    yEdgesRef.current.set(newEdge.id, newEdge);
                 });
             }
         },
         []
     );
 
-    // Open node details
-    const openNodeDetails = useCallback((event, node) => {
-        setEditingNode(node);
-        setForm({
-            label: node.data?.label || "",
-            color: node.style?.background || "#ffffff",
-            notes: node.data?.notes || "",
-        });
-    }, []);
-
-    // Create new node
-
+    // Create node
     const createNode = useCallback(() => {
         const viewport = {
             x: window.innerWidth / 2 - 75,
@@ -193,80 +162,77 @@ function FlowCanvas({ room, connectedRoom, clientId, initRoom }) {
             data: { label: "" },
             style: { background: "#DDC5F5", color: "#000000" },
         };
-    
+
         setNodes((nds) => nds.concat(newNode));
 
-        if (yNodesRef.current && !applyingRemote.current) {
+        if (!applyingRemote.current && yNodesRef.current) {
             ydocRef.current.transact(() => {
-                yNodesRef.current.push([newNode]);
+                yNodesRef.current.set(newNode.id, newNode);
             });
         }
-    
+
         setToast("Created new node...");
         setShowToast(true);
         setTimeout(() => setShowToast(false), 2000);
     }, [project]);
+
+    // Open node modal
+    const openNodeDetails = useCallback((event, node) => {
+        setEditingNode(node);
+        setForm({
+            label: node.data?.label || "",
+            color: node.style?.background || "#ffffff",
+            notes: node.data?.notes || "",
+        });
+    }, []);
     
-    // Save changes on details modal
+    // Save node changes
     const saveChanges = () => {
         if (!editingNode) return;
+        setNodes((nds) =>
+            nds.map((n) =>
+                n.id === editingNode.id
+                    ? {
+                        ...n,
+                        data: { ...n.data, label: form.label, notes: form.notes },
+                        style: { ...n.style, background: form.color, color: getContrastingTextColor(form.color) },
+                    }
+                    : n
+            )
+        );
 
-    setNodes((nds) =>
-        nds.map((n) =>
-            n.id === editingNode.id
-            ? {
-                ...n,
-                data: { ...n.data, label: form.label, notes: form.notes },
-                style: { ...n.style, background: form.color, color: getContrastingTextColor(form.color) },
-                }
-            : n
-        )
-    );
-
-    // Update Yjs incrementally
-    const yNodes = yNodesRef.current;
-    if (yNodes && !applyingRemote.current) {
-        ydocRef.current.transact(() => {
-            const index = yNodes.toArray().findIndex((n) => n.id === editingNode.id);
-            if (index >= 0) {
-            yNodes.delete(index, 1);
-            yNodes.insert(index, [
-                {
-                ...editingNode,
-                data: { ...editingNode.data, label: form.label, notes: form.notes },
-                style: { ...editingNode.style, background: form.color, color: getContrastingTextColor(form.color) },
-                },
-            ]);
-            }
-        });
-    }
-
-    setEditingNode(null);
-    setToast("Saved changes...");
-    setShowToast(true);
-    setTimeout(() => setShowToast(false), 2000);
-    };
-
-    const deleteNode = useCallback(() => {
-        if (!editingNode) return;
-    
-        setNodes((nds) => nds.filter((n) => n.id !== editingNode.id));
-        setEdges((eds) => eds.filter((e) => e.source !== editingNode.id && e.target !== editingNode.id));
-    
-        const yNodes = yNodesRef.current;
-        const yEdges = yEdgesRef.current;
-        if (yNodes && yEdges && !applyingRemote.current) {
+        if (yNodesRef.current && !applyingRemote.current) {
             ydocRef.current.transact(() => {
-                const index = yNodes.toArray().findIndex((n) => n.id === editingNode.id);
-                if (index >= 0) yNodes.delete(index, 1);
-                const edgeIndexes = yEdges.toArray()
-                .map((e, idx) => ((e.source === editingNode.id || e.target === editingNode.id) ? idx : -1))
-                .filter((i) => i >= 0)
-                .sort((a, b) => b - a);
-                edgeIndexes.forEach((i) => yEdges.delete(i, 1));
+                yNodesRef.current.set(editingNode.id, {
+                    ...editingNode,
+                    data: { ...editingNode.data, label: form.label, notes: form.notes },
+                    style: { ...editingNode.style, background: form.color, color: getContrastingTextColor(form.color) },
+                });
             });
         }
-    
+
+        setEditingNode(null);
+        setToast("Saved changes...");
+        setShowToast(true);
+        setTimeout(() => setShowToast(false), 2000);
+    };
+
+    // Delete node
+    const deleteNode = useCallback(() => {
+        if (!editingNode) return;
+
+        setNodes((nds) => nds.filter((n) => n.id !== editingNode.id));
+        setEdges((eds) => eds.filter((e) => e.source !== editingNode.id && e.target !== editingNode.id));
+
+        if (yNodesRef.current && yEdgesRef.current && !applyingRemote.current) {
+            ydocRef.current.transact(() => {
+                yNodesRef.current.delete(editingNode.id);
+                Array.from(yEdgesRef.current.values())
+                    .filter((e) => e.source === editingNode.id || e.target === editingNode.id)
+                    .forEach((e) => yEdgesRef.current.delete(e.id));
+            });
+        }
+
         setEditingNode(null);
         setToast("Deleted node...");
         setShowToast(true);
