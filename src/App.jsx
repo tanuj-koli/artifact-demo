@@ -35,34 +35,34 @@ function FlowCanvas({ room, connectedRoom, clientId, initRoom }) {
     const [showToast, setShowToast] = useState(false);
 
     // Sync local changes to Yjs
-    useEffect(() => {
-        if (!yNodesRef.current || applyingRemote.current) {
-            return;
-        }
-        const ydoc = ydocRef.current;
-        ydoc.transact(() => {
-            yNodesRef.current.delete(0, yNodesRef.current.length);
-            yNodesRef.current.push(
-                nodes.map((n) => ({
-                id: n.id,
-                position: n.position,
-                data: n.data,
-                type: n.type,
-                style: n.style,
-                }))
-            );
-            yEdgesRef.current.delete(0, yEdgesRef.current.length);
-            yEdgesRef.current.push(
-                edges.map((e) => ({
-                id: e.id,
-                source: e.source,
-                target: e.target,
-                type: e.type,
-                animated: e.animated,
-                }))
-            );
-        });
-    }, [nodes, edges]);
+    // useEffect(() => {
+    //     if (!yNodesRef.current || applyingRemote.current) {
+    //         return;
+    //     }
+    //     const ydoc = ydocRef.current;
+    //     ydoc.transact(() => {
+    //         yNodesRef.current.delete(0, yNodesRef.current.length);
+    //         yNodesRef.current.push(
+    //             nodes.map((n) => ({
+    //             id: n.id,
+    //             position: n.position,
+    //             data: n.data,
+    //             type: n.type,
+    //             style: n.style,
+    //             }))
+    //         );
+    //         yEdgesRef.current.delete(0, yEdgesRef.current.length);
+    //         yEdgesRef.current.push(
+    //             edges.map((e) => ({
+    //             id: e.id,
+    //             source: e.source,
+    //             target: e.target,
+    //             type: e.type,
+    //             animated: e.animated,
+    //             }))
+    //         );
+    //     });
+    // }, [nodes, edges]);
 
     // Initialize Yjs room
     // Initialize Yjs room with Redis backend
@@ -202,8 +202,20 @@ function FlowCanvas({ room, connectedRoom, clientId, initRoom }) {
     // }, [room, setNodes, setEdges]);
 
     // Connect nodes
-    const edgeConnect = useCallback((params) => setEdges((eds) => addEdge({ ...params, id: nanoid() }, eds)),
-        [setEdges]
+
+    const edgeConnect = useCallback(
+        (params) => {
+            const newEdge = { ...params, id: nanoid() };
+            setEdges((eds) => eds.concat(newEdge));
+    
+            // Sync to Yjs
+            if (yEdgesRef.current && !applyingRemote.current) {
+                ydocRef.current.transact(() => {
+                    yEdgesRef.current.push([newEdge]);
+                });
+            }
+        },
+        []
     );
 
     // Open node details
@@ -217,6 +229,7 @@ function FlowCanvas({ room, connectedRoom, clientId, initRoom }) {
     }, []);
 
     // Create new node
+    
     const createNode = useCallback(() => {
         const viewport = {
             x: window.innerWidth / 2 - 75,
@@ -227,14 +240,23 @@ function FlowCanvas({ room, connectedRoom, clientId, initRoom }) {
         const newNode = {
             id,
             position,
-            data: { label: '' },
-            style: { background: '#DDC5F5', color: '#000000' },
+            data: { label: "" },
+            style: { background: "#DDC5F5", color: "#000000" },
         };
+    
         setNodes((nds) => nds.concat(newNode));
+    
+        // Push to Yjs
+        if (yNodesRef.current && !applyingRemote.current) {
+            ydocRef.current.transact(() => {
+                yNodesRef.current.push([newNode]);
+            });
+        }
+    
         setToast("Created new node...");
         setShowToast(true);
         setTimeout(() => setShowToast(false), 2000);
-    }, [project, setNodes]);
+    }, [project]);
     
     // Save changes on details modal
     const saveChanges = () => {
