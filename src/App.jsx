@@ -109,6 +109,7 @@ function FlowCanvas({ room, connectedRoom, clientId, initRoom }) {
         startRoom();
     }, [room, setNodes, setEdges]);
 
+    // On Nodes Change
     const onNodesChangeWithSync = (changes) => {
         setNodes((nds) => {
             const updatedNodes = applyNodeChanges(changes, nds);
@@ -208,35 +209,69 @@ function FlowCanvas({ room, connectedRoom, clientId, initRoom }) {
     
     // Save changes on details modal
     const saveChanges = () => {
-        setNodes((nodes) =>
-            nodes.map((n) =>
-                n.id === editingNode.id
-                ? {
-                    ...n,
-                    data: { ...n.data, label: form.label, notes: form.notes },
-                    style: { ...n.style, background: form.color, color: getContrastingTextColor(form.color)},
-                    }
-                : n
-            )
-        );
-        setEditingNode(null);
-        setToast("Saved changes...");
-        setShowToast(true);
-        setTimeout(() => setShowToast(false), 2000);
+        if (!editingNode) return;
+
+    setNodes((nds) =>
+        nds.map((n) =>
+            n.id === editingNode.id
+            ? {
+                ...n,
+                data: { ...n.data, label: form.label, notes: form.notes },
+                style: { ...n.style, background: form.color, color: getContrastingTextColor(form.color) },
+                }
+            : n
+        )
+    );
+
+    // Update Yjs incrementally
+    const yNodes = yNodesRef.current;
+    if (yNodes && !applyingRemote.current) {
+        ydocRef.current.transact(() => {
+            const index = yNodes.toArray().findIndex((n) => n.id === editingNode.id);
+            if (index >= 0) {
+            yNodes.delete(index, 1);
+            yNodes.insert(index, [
+                {
+                ...editingNode,
+                data: { ...editingNode.data, label: form.label, notes: form.notes },
+                style: { ...editingNode.style, background: form.color, color: getContrastingTextColor(form.color) },
+                },
+            ]);
+            }
+        });
+    }
+
+    setEditingNode(null);
+    setToast("Saved changes...");
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 2000);
     };
 
-    // Delete node
     const deleteNode = useCallback(() => {
-        if (!editingNode) {
-            return;
+        if (!editingNode) return;
+    
+        setNodes((nds) => nds.filter((n) => n.id !== editingNode.id));
+        setEdges((eds) => eds.filter((e) => e.source !== editingNode.id && e.target !== editingNode.id));
+    
+        const yNodes = yNodesRef.current;
+        const yEdges = yEdgesRef.current;
+        if (yNodes && yEdges && !applyingRemote.current) {
+            ydocRef.current.transact(() => {
+                const index = yNodes.toArray().findIndex((n) => n.id === editingNode.id);
+                if (index >= 0) yNodes.delete(index, 1);
+                const edgeIndexes = yEdges.toArray()
+                .map((e, idx) => ((e.source === editingNode.id || e.target === editingNode.id) ? idx : -1))
+                .filter((i) => i >= 0)
+                .sort((a, b) => b - a);
+                edgeIndexes.forEach((i) => yEdges.delete(i, 1));
+            });
         }
-        setNodes((nodes) => nodes.filter((n) => n.id !== editingNode.id));
-        setEdges((edges) => edges.filter((e) => e.source !== editingNode.id && e.target !== editingNode.id));
+    
         setEditingNode(null);
         setToast("Deleted node...");
         setShowToast(true);
         setTimeout(() => setShowToast(false), 2000);
-    }, [editingNode, setNodes, setEdges]);
+    }, [editingNode]);
 
     // Controls node text color to contrast with background color
     function getContrastingTextColor(hex) {
