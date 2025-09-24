@@ -60,6 +60,9 @@ function FlowCanvas({ room, connectedRoom, clientId, initRoom }) {
                 Y.applyUpdate(ydoc, update);
             }
 
+            setNodes(Array.from(yNodes.values()));
+            setEdges(Array.from(yEdges.values()));
+
             // Observe remote changes
             yNodes.observe(() => {
                 applyingRemote.current = true;
