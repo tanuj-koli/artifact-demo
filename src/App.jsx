@@ -45,8 +45,9 @@ function FlowCanvas({ room, connectedRoom, clientId, initRoom }) {
             }
         
             const ydoc = new Y.Doc();
-            const yNodes = ydoc.getArray("nodes");
-            const yEdges = ydoc.getArray("edges");
+            const yNodes = ydoc.getMap("nodes");
+            const yEdges = ydoc.getMap("edges");
+
         
             // Load initial state from Redis via API
             const res = await fetch(`/api/room/${room}`);
@@ -62,13 +63,13 @@ function FlowCanvas({ room, connectedRoom, clientId, initRoom }) {
             // Observe remote changes
             yNodes.observe(() => {
                 applyingRemote.current = true;
-                setNodes(yNodes.toArray());
+                setNodes(Array.from(yNodes.values()));
                 setTimeout(() => (applyingRemote.current = false), 10);
             });
 
             yEdges.observe(() => {
                 applyingRemote.current = true;
-                setEdges(yEdges.toArray());
+                setEdges(Array.from(yEdges.values()));
                 setTimeout(() => (applyingRemote.current = false), 10);
             });
         
@@ -96,8 +97,8 @@ function FlowCanvas({ room, connectedRoom, clientId, initRoom }) {
             yEdgesRef.current = yEdges;
 
             // Initialize local state
-            setNodes(yNodes.toArray());
-            setEdges(yEdges.toArray());
+            setNodes(Array.from(yNodes.values()));
+            setEdges(Array.from(yEdges.values()));
 
             return () => {
                 clearInterval(poll);
@@ -112,17 +113,11 @@ function FlowCanvas({ room, connectedRoom, clientId, initRoom }) {
     const onNodesChangeWithSync = (changes) => {
         setNodes((nds) => {
             const updatedNodes = applyNodeChanges(changes, nds);
-            console.log('moving node')
+    
             if (!applyingRemote.current && yNodesRef.current) {
                 ydocRef.current.transact(() => {
-                    changes.forEach((change) => {
-                        const node = updatedNodes.find((n) => n.id === change.id);
-                        if (!node) return;
-    
-                        // Only update relevant fields
-                        const yNode = yNodesRef.current.get(node.id) || {};
-                        const newYNode = { ...yNode, position: node.position, style: node.style, data: node.data };
-                        yNodesRef.current.set(node.id, newYNode);
+                    updatedNodes.forEach((n) => {
+                        yNodesRef.current.set(n.id, n);
                     });
                 });
             }
@@ -130,6 +125,7 @@ function FlowCanvas({ room, connectedRoom, clientId, initRoom }) {
             return updatedNodes;
         });
     };
+    
     
 
     // Edge changes
@@ -235,14 +231,14 @@ function FlowCanvas({ room, connectedRoom, clientId, initRoom }) {
         setNodes((nds) => nds.filter((n) => n.id !== editingNode.id));
         setEdges((eds) => eds.filter((e) => e.source !== editingNode.id && e.target !== editingNode.id));
 
-        if (yNodesRef.current && yEdgesRef.current && !applyingRemote.current) {
+        if (!applyingRemote.current && yNodesRef.current && yEdgesRef.current) {
             ydocRef.current.transact(() => {
-                yNodesRef.current.delete(editingNode.id);
+                yNodesRef.current.delete(editingNode.id); // works
                 Array.from(yEdgesRef.current.values())
                     .filter((e) => e.source === editingNode.id || e.target === editingNode.id)
                     .forEach((e) => yEdgesRef.current.delete(e.id));
             });
-        }
+        }        
 
         setEditingNode(null);
         setToast("Deleted node...");
