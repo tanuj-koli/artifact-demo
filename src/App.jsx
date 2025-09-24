@@ -21,10 +21,11 @@ function FlowCanvas({ room, connectedRoom, clientId, initRoom }) {
     // Data
     const { project } = useReactFlow();
     const applyingRemote = useRef(false);
+
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+
     const ydocRef = useRef(null);
-    const providerRef = useRef(null);
     const yNodesRef = useRef(null);
     const yEdgesRef = useRef(null);
 
@@ -59,9 +60,6 @@ function FlowCanvas({ room, connectedRoom, clientId, initRoom }) {
                 const update = new Uint8Array(data.update);
                 Y.applyUpdate(ydoc, update);
             }
-
-            setNodes(Array.from(yNodes.values()));
-            setEdges(Array.from(yEdges.values()));
 
             // Observe remote changes
             yNodes.observe(() => {
@@ -116,15 +114,23 @@ function FlowCanvas({ room, connectedRoom, clientId, initRoom }) {
     const onNodesChangeWithSync = (changes) => {
         setNodes((nds) => {
             const updatedNodes = applyNodeChanges(changes, nds);
-    
+        
             if (!applyingRemote.current && yNodesRef.current) {
                 ydocRef.current.transact(() => {
-                    updatedNodes.forEach((n) => {
-                        yNodesRef.current.set(n.id, n);
+                changes.forEach((change) => {
+                    const node = updatedNodes.find((n) => n.id === change.id);
+                    if (!node) return;
+                    const yNode = yNodesRef.current.get(node.id) || {};
+                    yNodesRef.current.set(node.id, {
+                    ...yNode,
+                    position: node.position,
+                    style: node.style,
+                    data: node.data,
                     });
                 });
+                });
             }
-    
+        
             return updatedNodes;
         });
     };
@@ -177,7 +183,7 @@ function FlowCanvas({ room, connectedRoom, clientId, initRoom }) {
 
         if (!applyingRemote.current && yNodesRef.current) {
             ydocRef.current.transact(() => {
-                yNodesRef.current.set(newNode.id, newNode);
+                ydocRef.current.transact(() => yNodesRef.current.set(newNode.id, newNode));
             });
         }
 
