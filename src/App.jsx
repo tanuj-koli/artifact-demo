@@ -56,9 +56,17 @@ function FlowCanvas({ room, connectedRoom, clientId, initRoom }) {
                 throw new Error(`Failed to fetch room: ${res.status}`);
             }
             const data = await res.json();
+            
             if (data.update) {
                 const update = new Uint8Array(data.update);
                 Y.applyUpdate(ydoc, update);
+            }
+
+            if (data.nodes) {
+                const yNodes = ydoc.getMap("nodes");
+                Object.values(data.nodes).forEach((node) => {
+                    yNodes.set(node.id, node);
+                });
             }
 
             // Observe remote changes
